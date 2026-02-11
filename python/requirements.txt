@@ -1,0 +1,30 @@
+# Med-MIR Python Pipeline Dependencies
+# =====================================
+
+# Core ML Framework
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Hugging Face Ecosystem
+transformers>=4.35.0
+open_clip_torch>=2.24.0
+optimum[onnxruntime]>=1.16.0
+
+# Image Processing
+Pillow>=10.0.0
+
+# Data Handling
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Progress Bars
+tqdm>=4.65.0
+
+# HTTP Requests (for dataset download)
+requests>=2.31.0
+
+# XML Parsing (for Open-I metadata)
+lxml>=4.9.0
+
+# Kaggle CLI (for NIH ChestX-ray14 download)
+kaggle>=1.6.0

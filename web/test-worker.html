@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Med-MIR Worker Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-top: 0; }
+        .status { 
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .loading { background: #fff3cd; color: #856404; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #progress { 
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        #progressBar {
+            height: 100%;
+            background: #007bff;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .result-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-left: 3px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Med-MIR Web Worker Test</h1>
+        <p>This page tests the transformers.js Web Worker for BiomedCLIP text encoding.</p>
+        
+        <div id="status" class="status info">Ready to test</div>
+        <div id="progress">
+            <div id="progressBar"></div>
+        </div>
+        
+        <div>
+            <button onclick="testWorker()" id="testBtn">Test Worker</button>
+            <button onclick="testEmbedding()" id="embedBtn" disabled>Test Embedding</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script type="module">
+        let worker = null;
+        let modelReady = false;
+        
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+        
+        function updateProgress(percent, message) {
+            document.getElementById('progressBar').style.width = percent + '%';
+            if (message) updateStatus(message, 'loading');
+        }
+        
+        function addResult(text, data) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.innerHTML = `
+                <strong>${text}</strong><br>
+                <small>${JSON.stringify(data, null, 2)}</small>
+            `;
+            results.appendChild(div);
+        }
+        
+        window.testWorker = async function() {
+            updateStatus('Initializing worker...', 'loading');
+            document.getElementById('testBtn').disabled = true;
+            
+            try {
+                // Create worker
+                worker = new Worker(
+                    new URL('./src/workers/inference.worker.ts', import.meta.url),
+                    { type: 'module' }
+                );
+                
+                // Handle worker messages
+                worker.onmessage = (event) => {
+                    const { type, id, payload } = event.data;
+                    
+                    switch (type) {
+                        case 'PROGRESS':
+                            const progress = (payload.progress || 0) * 100;
+                            updateProgress(progress, payload.status);
+                            break;
+                            
+                        case 'INIT_COMPLETE':
+                            modelReady = true;
+                            updateStatus('✓ Model loaded successfully!', 'success');
+                            updateProgress(100, 'Ready');
+                            document.getElementById('embedBtn').disabled = false;
+                            addResult('Model Initialization', {
+                                status: 'success',
+                                message: 'BiomedCLIP model loaded and ready'
+                            });
+                            break;
+                            
+                        case 'INIT_ERROR':
+                            updateStatus('✗ Model loading failed: ' + payload.error, 'error');
+                            addResult('Model Initialization Error', payload);
+                            break;
+                            
+                        case 'EMBED_RESULT':
+                            const embedding = payload.embedding;
+                            updateStatus('✓ Embedding generated successfully!', 'success');
+                            addResult('Embedding Result', {
+                                dimension: embedding.length,
+                                norm: Math.sqrt(Array.from(embedding).reduce((sum, x) => sum + x*x, 0)).toFixed(4),
+                                firstFewValues: Array.from(embedding.slice(0, 5))
+                            });
+                            break;
+                            
+                        case 'EMBED_ERROR':
+                            updateStatus('✗ Embedding failed: ' + payload.error, 'error');
+                            addResult('Embedding Error', payload);
+                            break;
+                    }
+                };
+                
+                worker.onerror = (error) => {
+                    updateStatus('✗ Worker error: ' + error.message, 'error');
+                    addResult('Worker Error', { message: error.message });
+                };
+                
+                // Initialize model
+                worker.postMessage({ type: 'INIT' });
+                
+            } catch (error) {
+                updateStatus('✗ Failed to create worker: ' + error.message, 'error');
+                addResult('Worker Creation Error', { message: error.message });
+            }
+        };
+        
+        window.testEmbedding = function() {
+            if (!modelReady) {
+                updateStatus('Model not ready yet', 'error');
+                return;
+            }
+            
+            const testQueries = [
+                'normal chest xray',
+                'pneumonia',
+                'cardiomegaly'
+            ];
+            
+            testQueries.forEach((query, index) => {
+                setTimeout(() => {
+                    updateStatus(`Testing: "${query}"`, 'loading');
+                    worker.postMessage({
+                        type: 'EMBED_TEXT',
+                        id: `test-${index}`,
+                        payload: { text: query }
+                    });
+                }, index * 1000);
+            });
+        };
+    </script>
+</body>
+</html>

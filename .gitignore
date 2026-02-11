@@ -15,7 +15,19 @@ web/public/demo-data/
 PROJECT_SPEC.md
 TASKS.md
 DECISIONS.md
-
+CHANGELOG.md
+FIXES_APPLIED.md
+FIXES_APPLIED2.md
+FIXES_ROUND_2.md
+FLOW_EXPLANATION.md
+PHASE1_COMPLETION_CHECKLIST.md
+PROJECT_STATUS.md
+QUICK_START.md
+READY_TO_TEST.md
+TESTING_GUIDE.md
+TRANSFORMERS_JS_VS_ONNX.md
+WEBPACK_FIX_COMPLETE.md
+WORKER_FIX_FINAL.md
 # -----------------------------------------------------------------------------
 # Python
 # -----------------------------------------------------------------------------
@@ -25,6 +37,8 @@ venv/
 env/
 .venv/
 ENV/
+med_mir/
+.cursor/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
