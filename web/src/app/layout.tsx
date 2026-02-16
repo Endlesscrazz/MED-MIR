@@ -3,6 +3,7 @@ import './globals.css';
 import { Header } from '@/components/Header';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
   title: 'Med-MIR | Medical Image Retrieval',
   description: 'A privacy-preserving, local-first medical image retrieval system using client-side AI inference.',
   keywords: ['medical imaging', 'image retrieval', 'AI', 'CLIP', 'chest x-ray', 'radiology'],

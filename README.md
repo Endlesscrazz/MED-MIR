@@ -2,7 +2,7 @@
 
 **Medical Multimodal Image Retrieval**
 
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-Web-005CED?style=flat-square&logo=onnx)](https://onnxruntime.ai/)
 [![BiomedCLIP](https://img.shields.io/badge/BiomedCLIP-Microsoft-FFD21E?style=flat-square)](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224)
@@ -27,7 +27,7 @@ Med-MIR employs a **Hybrid Architecture** combining offline pre-computation with
 │                                                                  │
 │  NIH ChestX-ray14 ──▶ Balanced ──▶ BiomedCLIP ──▶ Static Files  │
 │  (112K images,        Subset       Encoder        (embeddings,   │
-│   15 labels)          (233 imgs)                   metadata,     │
+│   15 labels)          (495 imgs)                   metadata,     │
 │                                                    ONNX model)   │
 └────────────────────────────┬─────────────────────────────────────┘
                              │ deployed as static files
@@ -48,7 +48,7 @@ Med-MIR employs a **Hybrid Architecture** combining offline pre-computation with
 │                                 │                                │
 │                                 ▼                                │
 │                       Cosine Similarity                          │
-│                     vs 233 image embeddings                      │
+│                     vs 495 image embeddings                      │
 │                                 │                                │
 │                                 ▼                                │
 │                        Ranked Results                            │
@@ -80,18 +80,20 @@ All computation happens locally. No data leaves the user's device.
 
 ## Evaluation Results
 
-Evaluated on 233 NIH ChestX-ray14 images across 15 diagnostic labels with 45 clinical queries:
+Evaluated on 495 NIH ChestX-ray14 subset images across 15 diagnostic labels with 45 clinical queries:
 
 | Metric | Strict | Semantic |
 |--------|--------|----------|
-| **Recall@1** | 28.9% | 37.8% |
-| **Recall@5** | 71.1% | 86.7% |
-| **Recall@10** | **84.4%** | **95.6%** |
-| **Recall@20** | 95.6% | 97.8% |
-| **mAP** | 22.3% | — |
-| **MRR** | 0.478 | 0.593 |
+| **Recall@1** | 40.0% | 51.1% |
+| **Recall@5** | 77.8% | 86.7% |
+| **Recall@10** | **91.1%** | **100.0%** |
+| **Recall@20** | 100.0% | 100.0% |
+| **mAP** | 22.0% | — |
+| **MRR** | 0.566 | 0.674 |
 
-> **Recall@10 = 84.4%** means: for 84% of queries, at least one relevant image appears in the top 10 results. With semantic matching (counting medically-related retrievals), this rises to **95.6%**.
+> **Recall@10 = 91.1%** means: for ~91% of queries, at least one relevant image appears in the top 10 results. With semantic matching (counting medically-related retrievals), this is **100%**.
+
+> **Dataset note (current run):** this baseline was generated from the NIH files currently present on local storage (495 selected images from available extracted folders), not the full 112,120-image archive.
 
 ---
 
@@ -101,7 +103,7 @@ Evaluated on 233 NIH ChestX-ray14 images across 15 diagnostic labels with 45 cli
 |-------|------------|
 | **AI Model** | [BiomedCLIP](https://huggingface.co/microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224) (PubMedBERT + ViT-B/16) |
 | **Browser Inference** | ONNX Runtime Web (WASM) + Web Workers + Custom BERT Tokenizer |
-| **Frontend** | Next.js 15 (App Router), TypeScript, Tailwind CSS, shadcn/ui |
+| **Frontend** | Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui |
 | **Charts** | Recharts |
 | **Data Pipeline** | Python 3.12, PyTorch, open_clip |
 | **Dataset** | [NIH ChestX-ray14](https://www.nih.gov/news-events/news-releases/nih-clinical-center-provides-one-largest-publicly-available-chest-x-ray-datasets-scientific-community) (112K images, 15 labels) |
@@ -133,11 +135,11 @@ cd python
 pip install kaggle
 python download_nih.py --kaggle --output_dir /Volumes/YourDrive/nih-data
 
-# Then select a balanced subset (~233 images across 15 labels)
+# Then select a balanced subset (~500 images across 15 labels)
 python download_nih.py --select-subset \
   --source_dir /Volumes/YourDrive/nih-data \
   --output_dir data/nih \
-  --per_label 150
+  --per_label 33
 ```
 
 ### 3. Run the Pipeline

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { Search, BarChart3, AlertTriangle, Github } from 'lucide-react';
+import { Search, BarChart3, AlertTriangle, Gauge, Github } from 'lucide-react';
 
 /**
  * Navigation links configuration.
@@ -23,6 +23,11 @@ const NAV_LINKS = [
     href: '/hard-cases',
     label: 'Hard Cases',
     icon: AlertTriangle,
+  },
+  {
+    href: '/benchmark',
+    label: 'Benchmark',
+    icon: Gauge,
   },
 ] as const;
 

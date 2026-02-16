@@ -20,7 +20,7 @@ export interface ImageMetadata {
   /** Ground truth diagnostic label */
   ground_truth_label: string;
   /** Source of the label (derived, raw, verified, or unknown) */
-  label_source?: 'derived' | 'raw' | 'verified' | 'unknown';
+  label_source?: 'dataset' | 'derived' | 'raw' | 'verified' | 'unknown';
   /** Whether label was manually verified */
   label_verified?: boolean;
 }

@@ -87,7 +87,7 @@ dependency.
 │                                    neighbors.json                      │
 │                                                                         │
 │  ┌────────────┐                                                         │
-│  │  Export     │──▶  model_flat.onnx + vocab.txt + tokenizer configs   │
+│  │  Export     │──▶  text/vision ONNX + quantized variants + tokenizer  │
 │  │  ONNX      │                                                         │
 │  └────────────┘                                                         │
 └─────────────────────────────────┬───────────────────────────────────────┘
@@ -137,8 +137,8 @@ dependency.
 | Path | When | Latency | Method |
 |------|------|---------|--------|
 | **Fallback Lookup** | Query matches 1 of 55 pre-computed queries | < 50ms | JSON key lookup |
-| **Fuzzy Fallback** | Query words appear in a pre-computed key | < 50ms | Word-overlap matching |
-| **Live AI Inference** | Completely novel query | 5–30s first time, 1–2s cached | ONNX model in Web Worker |
+| **Fallback Variants** | Query matches normalized variants (e.g., xray/x-ray, spacing) | < 50ms | Normalized key matching |
+| **Live AI Inference** | Completely novel query | first run depends on model download/compile; warm queries are much faster | ONNX model in Web Worker |
 
 **Why pre-compute at all?** Pre-computed results provide instant UX for the
 most common medical queries. The live AI inference path handles the long tail—
@@ -174,23 +174,25 @@ The "Find Similar" feature uses pre-computed nearest neighbors:
 
 #### The 15 Labels
 
-| Label | Display Name | Full Dataset Count | Our Subset |
-|-------|-------------|-------------------|------------|
-| No Finding | Normal | ~60,361 | 17 |
-| Infiltration | Infiltration | ~19,894 | 12 |
-| Effusion | Effusion | ~13,317 | 21 |
-| Atelectasis | Atelectasis | ~11,559 | 35 |
-| Nodule | Nodule | ~6,331 | 6 |
-| Mass | Mass | ~5,782 | 7 |
-| Pneumothorax | Pneumothorax | ~5,302 | 4 |
-| Consolidation | Consolidation | ~4,667 | 21 |
-| Pleural_Thickening | Pleural Thickening | ~3,385 | 12 |
-| Cardiomegaly | Cardiomegaly | ~2,776 | 24 |
-| Emphysema | Emphysema | ~2,516 | 14 |
-| Edema | Edema | ~2,303 | 6 |
-| Fibrosis | Fibrosis | ~1,686 | 30 |
-| Pneumonia | Pneumonia | ~1,431 | 5 |
-| Hernia | Hernia | ~227 | 19 |
+| Label | Display Name | Full Dataset Count | Current Subset (primary labels) |
+|-------|-------------|-------------------|----------------------------------|
+| No Finding | Normal | ~60,361 | 33 |
+| Infiltration | Infiltration | ~19,894 | 52 |
+| Effusion | Effusion | ~13,317 | 36 |
+| Atelectasis | Atelectasis | ~11,559 | 91 |
+| Nodule | Nodule | ~6,331 | 24 |
+| Mass | Mass | ~5,782 | 17 |
+| Pneumothorax | Pneumothorax | ~5,302 | 19 |
+| Consolidation | Consolidation | ~4,667 | 38 |
+| Pleural_Thickening | Pleural Thickening | ~3,385 | 14 |
+| Cardiomegaly | Cardiomegaly | ~2,776 | 47 |
+| Emphysema | Emphysema | ~2,516 | 33 |
+| Edema | Edema | ~2,303 | 26 |
+| Fibrosis | Fibrosis | ~1,686 | 29 |
+| Pneumonia | Pneumonia | ~1,431 | 8 |
+| Hernia | Hernia | ~227 | 28 |
+
+> Current run note: subset was built from NIH files available on the mounted drive during this run.
 
 #### Multi-Label Structure
 
@@ -214,11 +216,11 @@ Two-step process designed for limited local storage:
 # Step 1: Download full dataset to external HDD (~45 GB)
 python download_nih.py --kaggle --output_dir /Volumes/MyDrive/nih-data
 
-# Step 2: Select balanced subset, copy to project (~1.2 GB → 233 images)
+# Step 2: Select balanced subset, copy to project (~500 images target)
 python download_nih.py --select-subset \
   --source_dir /Volumes/MyDrive/nih-data \
   --output_dir data/nih \
-  --per_label 150
+  --per_label 33
 ```
 
 **Balancing strategy**: Parse `Data_Entry_2017_v2020.csv`, group images by
@@ -228,7 +230,7 @@ Multi-label images count toward all their labels.
 **Output**:
 ```
 data/nih/
-├── images/      # 233 PNG images (original resolution)
+├── images/      # ~495 PNG images (current run)
 └── labels.csv   # filename, labels (pipe-separated), primary_label
 ```
 
@@ -278,7 +280,7 @@ python generate_index.py \
 
 | File | Size | Description |
 |------|------|-------------|
-| `embeddings.bin` | 466 KB | Float32Array (233 × 512) |
+| `embeddings.bin` | 990 KB | Float32Array (495 × 512) |
 | `metadata.json` | 260 KB | Image metadata with verified labels |
 | `fallback_results.json` | 30 KB | Pre-computed top-10 for 55 queries |
 | `nearest_neighbors.json` | 360 KB | Top-10 similar images per image |
@@ -286,40 +288,37 @@ python generate_index.py \
 
 ### 4.5 ONNX Export (`export_onnx.py`)
 
-Converts BiomedCLIP's text encoder to ONNX for browser inference:
+Converts BiomedCLIP's text and vision encoders to ONNX for browser inference:
 
 1. Load model via `open_clip`
-2. Wrap text encoder + projection layer in a torch Module
-3. Export to ONNX (opset 18, dynamic batch axis)
-4. Export tokenizer files (vocab.txt, configs) for custom JS tokenizer
+2. Export text and vision wrappers to ONNX
+3. Apply selective dynamic INT8 quantization (`MatMul`, `Gemm`) after graph cleanup
+4. Export tokenizer files (`vocab.txt`, tokenizer configs)
 
 ```bash
 python export_onnx.py --output_dir output/model
 ```
 
-**Output**:
+**Output (current run)**:
 
 | File | Size | Description |
 |------|------|-------------|
-| `model_flat.onnx` | ~420 MB | BiomedCLIP text encoder (FP32) |
+| `text_encoder.onnx.data` | ~418.5 MB | Text encoder FP32 weights |
+| `text_encoder_quantized.onnx` | ~174.6 MB | Text encoder INT8 |
+| `vision_encoder.onnx.data` | ~328.8 MB | Vision encoder FP32 weights |
+| `vision_encoder_quantized.onnx` | ~85.7 MB | Vision encoder INT8 |
 | `vocab.txt` | 220 KB | PubMedBERT vocabulary (30,522 tokens) |
-| `config.json` | ~500 B | Model config |
-| `tokenizer_config.json` | ~500 B | Tokenizer settings |
-| `special_tokens_map.json` | ~300 B | [CLS], [SEP], [PAD], [UNK] |
+| `tokenizer_config.json` | ~1.3 KB | Tokenizer settings |
+| `special_tokens_map.json` | ~125 B | [CLS], [SEP], [PAD], [UNK] |
 
-### 4.6 Why Not Quantize?
+### 4.6 Quantization Summary
 
-We export the **FP32** model rather than INT8 quantized because:
-
-- BiomedCLIP's open_clip architecture has non-standard graph structures that
-  cause quantization errors (shape mismatches during ONNX optimization)
-- The 420 MB model is cached by the browser after first load, so download
-  cost is one-time
-- FP32 preserves full embedding quality—important for medical retrieval
-  where subtle differences matter
-
-Future work: INT8 quantization with careful graph surgery, or distillation
-to a smaller model.
+- Text encoder size reduction: **58.29%** (FP32 → INT8)
+- Vision encoder size reduction: **73.93%** (FP32 → INT8)
+- Combined reduction: **65.17%** (747.36 MB → 260.30 MB)
+- Fidelity:
+  - text FP32 vs INT8 cosine mean: **0.9942**
+  - vision FP32 vs INT8 cosine mean: **0.9981**
 
 ---
 
@@ -334,7 +333,8 @@ Main Thread (React)           Web Worker (inference.worker.js)
       │                              │
       │── INIT ──────────────────────▶│ Load ONNX Runtime (CDN)
       │                              │ Load vocab.txt
-      │                              │ Load model_flat.onnx
+      │                              │ Load text_encoder_quantized.onnx
+      │                              │ (vision_encoder_quantized.onnx on demand)
       │◀── INIT_COMPLETE ────────────│
       │                              │
       │── EMBED_TEXT("pneumonia") ──▶│ Tokenize (custom BERT)
@@ -373,7 +373,7 @@ JavaScript:
 1. Define **45 evaluation queries** (3 natural-language variations per label × 15 labels)
    - Example for Pneumonia: `"pneumonia"`, `"pneumonia chest xray"`, `"lung infection pneumonia"`
 2. Encode each query with BiomedCLIP's text encoder → 512-dim vector
-3. Compute cosine similarity against all 233 image embeddings
+3. Compute cosine similarity against all 495 image embeddings
 4. Rank images by similarity score
 5. Check if top-K results contain at least one image whose label matches
 
@@ -422,68 +422,53 @@ For queries where the model fails (top-1 ≠ expected), we categorize:
 
 ## 7. Results
 
-### 7.1 Current Evaluation (233 NIH ChestX-ray14 Images)
+### 7.1 Current Evaluation (495 NIH ChestX-ray14 Subset Images)
 
 | Metric | Strict | Adjusted | Semantic |
 |--------|--------|----------|----------|
-| **Recall@1** | 28.9% | 28.9% | 37.8% |
-| **Recall@5** | 71.1% | 71.1% | 86.7% |
-| **Recall@10** | **84.4%** | **84.4%** | **95.6%** |
-| **Recall@20** | 95.6% | 95.6% | 97.8% |
-| **mAP** | 22.3% | 22.3% | — |
-| **MRR** | 0.478 | 0.478 | 0.593 |
+| **Recall@1** | 40.0% | 40.0% | 51.1% |
+| **Recall@5** | 77.8% | 77.8% | 86.7% |
+| **Recall@10** | **91.1%** | **91.1%** | **100.0%** |
+| **Recall@20** | 100.0% | 100.0% | 100.0% |
+| **mAP** | 22.0% | 22.0% | — |
+| **MRR** | 0.566 | 0.566 | 0.674 |
 
 > Strict = Adjusted because all 15 labels have images (0 excluded labels).
 
 ### 7.2 Interpretation
 
-- **Recall@10 = 84.4%**: For 84% of clinical queries, at least one relevant
+- **Recall@10 = 91.1%**: For over 90% of clinical queries, at least one relevant
   image appears in the top 10 results. This is strong for a zero-shot retrieval
   system with no task-specific fine-tuning.
 
-- **Semantic Recall@10 = 95.6%**: When we count medically-related retrievals
-  (e.g., returning Effusion for an Edema query), the system is useful 96% of
+- **Semantic Recall@10 = 100%**: When we count medically-related retrievals
+  (e.g., returning Effusion for an Edema query), the system is useful for all
   the time. This reflects real clinical utility.
 
-- **mAP = 22.3%**: Lower because correct results aren't always ranked first.
-  With 15 competing labels and 233 images, many images share high similarity.
+- **mAP = 22.0%**: Lower because correct results aren't always ranked first.
+  With 15 competing labels and multi-label overlap, many images share high similarity.
   This is expected for a dense multi-label dataset.
 
-- **MRR = 0.478**: On average, the first correct result is around rank 2–3.
+- **MRR = 0.566**: On average, the first correct result appears earlier than rank 2.
 
 ### 7.3 Per-Label Performance
 
-| Label | Recall@10 | Images | Notes |
-|-------|-----------|--------|-------|
-| Normal | 100% | 17 | Easily distinguished |
-| Cardiomegaly | 100% | 24 | Enlarged heart is visually distinct |
-| Effusion | 100% | 21 | Clear pleural fluid pattern |
-| Atelectasis | 100% | 35 | Well-represented |
-| Pneumothorax | 100% | 4 | Despite few images, distinct appearance |
-| Edema | 100% | 6 | Fluid patterns well-captured |
-| Nodule | 100% | 6 | Focal lesion detected |
-| Infiltration | 100% | 12 | Good retrieval |
-| Fibrosis | 100% | 30 | Chronic changes recognized |
-| Pleural Thickening | 100% | 12 | Good performance |
-| Hernia | 100% | 19 | Visually distinctive |
-| Mass | 66.7% | 7 | Sometimes confused with Nodule |
-| Pneumonia | 33.3% | 5 | Often confused with Consolidation |
-| Consolidation | 33.3% | 21 | Confused with Infiltration |
-| Emphysema | 33.3% | 14 | Subtle findings harder to distinguish |
+Per-label Recall@10 and label counts are generated in `metrics.json` (`per_label` and `dataset.label_distribution`).
+For this run, the largest label groups are Infiltration, Effusion, Atelectasis, and Consolidation; the rarest primary labels include Pneumonia and Pleural Thickening.
 
 ### 7.4 Hard Cases Summary
 
 | Statistic | Count |
 |-----------|-------|
 | Total queries | 45 |
-| Strict failures (top-1 wrong) | 35 |
-| Semantic matches (medically related) | 3 |
-| True failures | 32 |
-| Top confusion patterns | Pneumonia ↔ Consolidation, Atelectasis ↔ Effusion |
+| Strict failures (top-1 wrong) | 34 |
+| Semantic matches (medically related) | 5 |
+| True failures | 29 |
+| Top confusion patterns | Atelectasis ↔ Effusion, Emphysema ↔ Atelectasis, Pneumonia ↔ Infiltration |
 
-The 35 "strict failures" are misleading—they mean the top-1 result wasn't
-an exact label match, but by top-10, 84.4% of queries found a correct result.
-The 3 semantic matches (e.g., Pneumonia → Consolidation) are clinically
+The strict failures do not mean retrieval is unusable: top-1 may miss exact label match,
+but by top-10, 91.1% of queries found a strict match and 100% found a semantic match.
+The semantic matches (e.g., Pneumonia → Infiltration) are clinically
 reasonable since pneumonia typically manifests as consolidation.
 
 ---
@@ -499,7 +484,7 @@ reasonable since pneumonia typically manifests as consolidation.
 | **ONNX Export** | torch.onnx | opset 18 | Convert to portable format |
 | **Browser Runtime** | ONNX Runtime Web | latest (CDN) | WASM-based model inference |
 | **Tokenizer** | Custom JS (WordPiece) | — | BERT tokenization in browser |
-| **Frontend** | Next.js | 15 | React framework (App Router) |
+| **Frontend** | Next.js | 14.1.0 | React framework (App Router) |
 | **Language** | TypeScript | 5.x | Type-safe frontend |
 | **Styling** | Tailwind CSS | 3.x | Utility-first CSS |
 | **Components** | shadcn/ui | latest | Accessible component library |
@@ -512,12 +497,13 @@ reasonable since pneumonia typically manifests as consolidation.
 
 | Asset | Size | Caching |
 |-------|------|---------|
-| ONNX model | ~420 MB | Cached after first load |
-| Embeddings | 466 KB | Per session |
-| Metadata + JSON | ~650 KB | Per session |
-| Images (233 WebP) | ~1.1 MB | Browser cache |
-| **Total first visit** | **~422 MB** | — |
-| **Subsequent visits** | **~2.2 MB** | Model cached |
+| Quantized text encoder | ~174.6 MB | Cached after first load |
+| Quantized vision encoder | ~85.7 MB | Loaded on first image-query path |
+| Embeddings | 990 KB | Per session |
+| Metadata + JSON | ~470 KB | Per session |
+| Images (495 WebP) | ~2.3 MB | Browser cache |
+| **Total first visit (text path)** | **~176 MB + app assets** | — |
+| **Image-query enablement** | **+~86 MB one-time** | Vision model cached |
 
 ---
 
@@ -578,9 +564,9 @@ This means:
 
 | Limitation | Impact | Mitigation |
 |------------|--------|------------|
-| **233 images** (small subset) | Limited label diversity per class | Can scale to full 112K with CHPC GPU |
-| **FP32 model** (420 MB) | Large first download | Browser caches model; one-time cost |
-| **Text encoder only** in browser | Can't do image upload search in real-time | "Find Similar" uses pre-computed neighbors |
+| **495-image subset** (not full NIH) | Limited coverage vs full benchmark | Can scale with larger available data |
+| **Large model payload** | First-run download still significant | INT8 quantization + browser caching |
+| **Data availability on external drive** | Missing extracted folders reduces usable sample pool | Ensure all NIH image packs are extracted before next run |
 | **Single modality** (chest X-ray) | Only one imaging type | Architecture supports any image type |
 | **First inference latency** (~10s) | User waits on novel queries | Pre-computed fallbacks cover common cases |
 | **Multi-label evaluation** | Primary label used for display; evaluation simplified | All labels considered for Recall computation |
@@ -602,7 +588,7 @@ This means:
 
 | Scenario | Images | Embedding File | Index Time | Browser Search |
 |----------|--------|---------------|------------|---------------|
-| Current demo | 233 | 466 KB | ~20s (CPU) | < 1ms |
+| Current demo | 495 | 990 KB | ~40s (CPU) | < 2ms |
 | Medium | 10,000 | ~20 MB | ~15 min (CPU) | ~5ms |
 | Full NIH | 112,000 | ~220 MB | ~3 hrs (GPU) | ~50ms |
 | Multi-dataset | 500,000 | ~1 GB | ~12 hrs (GPU) | ~200ms* |

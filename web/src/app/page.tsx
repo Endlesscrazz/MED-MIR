@@ -1,23 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { SearchBox } from '@/components/SearchBox';
 import { ResultGrid } from '@/components/ResultGrid';
 import { LoadingState } from '@/components/LoadingState';
 import { useSearch } from '@/lib/hooks/useSearch';
 import { QUERY_SUGGESTIONS } from '@/lib/utils';
+import { ImageIcon, Upload } from 'lucide-react'; // Added icons
 
 /**
  * Main search page for Med-MIR.
- * 
- * Provides the primary interface for:
- * - Text-to-image search
- * - Viewing search results
- * - Finding similar images
  */
 export default function HomePage() {
   const {
     search,
+    searchByImage, // Destructure the new function
     findSimilar,
     searchState,
     modelState,
@@ -27,20 +24,37 @@ export default function HomePage() {
 
   const [selectedSuggestion, setSelectedSuggestion] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle search submission
+  // Handle text search submission
   const handleSearch = useCallback((query: string) => {
     if (query.trim()) {
       setSearchQuery(query.trim());
       search(query.trim());
     }
   }, [search]);
+
+  // Handle image upload submission
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSearchQuery(`Image: ${file.name}`);
+      setSelectedSuggestion(null);
+      searchByImage(file); // Trigger the vision encoder flow
+    }
+  }, [searchByImage]);
+
+  // Trigger file browser
+  const triggerUpload = () => {
+    fileInputRef.current?.click();
+  };
   
   // Handle clear search
   const handleClearSearch = useCallback(() => {
     setSearchQuery('');
     setSelectedSuggestion(null);
     search('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }, [search]);
 
   // Handle suggestion click
@@ -62,7 +76,7 @@ export default function HomePage() {
           Medical Image Retrieval
         </h1>
         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-          Search through medical images using natural language queries. 
+          Search through medical images using natural language or by uploading an X-ray. 
           All AI inference runs locally in your browser — your data never leaves your device.
         </p>
       </section>
@@ -78,19 +92,39 @@ export default function HomePage() {
       {/* Search Interface */}
       {isReady && (
         <>
-          {/* Search Box */}
-          <section className="mb-8">
-            <SearchBox
-              onSearch={handleSearch}
-              isLoading={searchState.isLoading}
-              initialValue={searchQuery}
-              placeholder="Describe what you're looking for (e.g., 'pleural effusion', 'normal chest xray')"
-            />
+          {/* Search Controls */}
+          <section className="mb-8 flex flex-col items-center gap-4 sm:flex-row">
+            <div className="w-full flex-1">
+              <SearchBox
+                onSearch={handleSearch}
+                isLoading={searchState.isLoading}
+                initialValue={searchQuery}
+                placeholder="Describe pathology (e.g., 'pleural effusion')"
+              />
+            </div>
+            
+            <div className="flex shrink-0 gap-2">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                accept="image/*" 
+                className="hidden" 
+              />
+              <button
+                onClick={triggerUpload}
+                disabled={searchState.isLoading}
+                className="flex h-14 items-center gap-2 rounded-xl border bg-card px-6 font-medium shadow-sm transition-all hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+              >
+                <ImageIcon className="h-5 w-5 text-primary" />
+                <span className="hidden md:inline">Search by Image</span>
+              </button>
+            </div>
           </section>
           
-          {/* Model Loading Progress (when model is loading) */}
+          {/* Model Loading Progress (Visible when Vision model is lazy-loading) */}
           {modelState.isLoading && !modelState.isLoaded && (
-            <section className="mb-8">
+            <section className="mb-8 animate-slide-in">
               <div className="rounded-lg border border-primary/50 bg-primary/10 p-4">
                 <div className="flex items-center gap-3">
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-primary/20">
@@ -104,13 +138,13 @@ export default function HomePage() {
                   </span>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Loading AI model... This may take 2-3 minutes on first load. The model will be cached for future use.
+                  Initializing Vision Encoder... First load takes ~30-60s.
                 </p>
               </div>
             </section>
           )}
 
-          {/* Query Suggestions */}
+          {/* Query Suggestions (Only if no results) */}
           {searchState.results.length === 0 && !searchState.isLoading && (
             <section className="mb-8">
               <h2 className="mb-4 text-sm font-medium text-muted-foreground">
@@ -134,13 +168,13 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* Search Status */}
+          {/* Search Status & Clear Button */}
           {searchState.query && (
             <section className="mb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span>
-                    Showing results for: <strong className="text-foreground">{searchState.query}</strong>
+                    Showing results for: <strong className="text-foreground truncate max-w-[200px] inline-block align-bottom">{searchState.query}</strong>
                   </span>
                   {searchState.searchType && (
                     <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
@@ -155,9 +189,9 @@ export default function HomePage() {
                 </div>
                 <button
                   onClick={handleClearSearch}
-                  className="rounded-lg border px-4 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="text-sm font-medium text-primary hover:underline"
                 >
-                  Clear Search
+                  Clear Results
                 </button>
               </div>
             </section>
@@ -166,8 +200,8 @@ export default function HomePage() {
           {/* Error State */}
           {searchState.error && (
             <section className="mb-8">
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
-                <p className="text-sm text-destructive">{searchState.error}</p>
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
+                <p className="text-sm text-destructive font-medium">{searchState.error}</p>
               </div>
             </section>
           )}
