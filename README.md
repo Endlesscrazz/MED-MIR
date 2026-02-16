@@ -68,7 +68,7 @@ All computation happens locally. No data leaves the user's device.
 | Feature | Description |
 |---------|-------------|
 | 🔍 **Real-Time Semantic Search** | Natural language queries matched against medical image embeddings using cosine similarity |
-| 💰 **Zero-Cost Deployment** | Static export to Vercel / GitHub Pages—no GPU servers required |
+| 💰 **Zero-Cost Deployment** | Static export to Vercel + Hugging Face Datasets assets—no GPU servers required |
 | 🔒 **Privacy-First Architecture** | All AI inference runs in the browser via Web Workers; medical data never transmitted |
 | ⚡ **Hybrid Retrieval Strategy** | Pre-computed fallbacks for common queries; ONNX inference for novel queries |
 | 🔗 **Find Similar** | One-click discovery of visually similar cases using pre-computed nearest neighbors |
@@ -107,7 +107,7 @@ Evaluated on 495 NIH ChestX-ray14 subset images across 15 diagnostic labels with
 | **Charts** | Recharts |
 | **Data Pipeline** | Python 3.12, PyTorch, open_clip |
 | **Dataset** | [NIH ChestX-ray14](https://www.nih.gov/news-events/news-releases/nih-clinical-center-provides-one-largest-publicly-available-chest-x-ray-datasets-scientific-community) (112K images, 15 labels) |
-| **Deployment** | Static export → Vercel / GitHub Pages |
+| **Deployment** | Static export → Vercel (app) + Hugging Face Datasets (assets) |
 
 ---
 
@@ -185,6 +185,21 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to explore.
+
+---
+
+## Live Deployment
+
+- Web app: `https://med-mir.vercel.app/`
+- Asset bundle (embeddings, metadata, model, images):  
+  `https://huggingface.co/datasets/ShreyasP07/med-mir-demo-bundle/resolve/221b2c99ef7e858bf95a4b27d7261d97fab1d1db/output`
+
+Set in frontend environment:
+
+```env
+NEXT_PUBLIC_SITE_URL=https://med-mir.vercel.app
+NEXT_PUBLIC_DATA_URL=https://huggingface.co/datasets/ShreyasP07/med-mir-demo-bundle/resolve/221b2c99ef7e858bf95a4b27d7261d97fab1d1db/output
+```
 
 ---
 

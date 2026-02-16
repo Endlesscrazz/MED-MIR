@@ -1,12 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { SearchBox } from '@/components/SearchBox';
 import { ResultGrid } from '@/components/ResultGrid';
 import { LoadingState } from '@/components/LoadingState';
 import { useSearch } from '@/lib/hooks/useSearch';
 import { QUERY_SUGGESTIONS } from '@/lib/utils';
-import { ImageIcon, Upload } from 'lucide-react'; // Added icons
+import { Activity, Cpu, FlaskConical, ImageIcon, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+
+type QuantBenchmark = {
+  size_metrics?: {
+    combined?: { reduction_pct?: number };
+  };
+  fidelity_metrics?: {
+    text_encoder_cosine_fp32_vs_int8?: { mean?: number };
+    vision_encoder_cosine_fp32_vs_int8?: { mean?: number };
+  };
+};
 
 /**
  * Main search page for Med-MIR.
@@ -25,6 +36,68 @@ export default function HomePage() {
   const [selectedSuggestion, setSelectedSuggestion] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [quantBench, setQuantBench] = useState<QuantBenchmark | null>(null);
+  const dataBaseUrl = process.env.NEXT_PUBLIC_DATA_URL || '/demo-data';
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBenchmark() {
+      try {
+        const response = await fetch(`${dataBaseUrl}/quantization_benchmark.json`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = (await response.json()) as QuantBenchmark;
+        if (!cancelled) setQuantBench(data);
+      } catch {
+        // Keep fallback constants if benchmark file is unavailable.
+      }
+    }
+    loadBenchmark();
+    return () => {
+      cancelled = true;
+    };
+  }, [dataBaseUrl]);
+
+  const combinedReduction = useMemo(() => {
+    const v = quantBench?.size_metrics?.combined?.reduction_pct;
+    return typeof v === 'number' ? `${v.toFixed(2)}%` : '65.17%';
+  }, [quantBench]);
+
+  const textFidelity = useMemo(() => {
+    const v = quantBench?.fidelity_metrics?.text_encoder_cosine_fp32_vs_int8?.mean;
+    return typeof v === 'number' ? v.toFixed(3) : '0.994';
+  }, [quantBench]);
+
+  const visionFidelity = useMemo(() => {
+    const v = quantBench?.fidelity_metrics?.vision_encoder_cosine_fp32_vs_int8?.mean;
+    return typeof v === 'number' ? v.toFixed(3) : '0.998';
+  }, [quantBench]);
+
+  const noveltyStats = [
+    {
+      label: 'Model Size Reduction',
+      value: combinedReduction,
+      detail: '747.36 MB -> 260.30 MB (text + vision INT8)',
+      icon: Cpu,
+    },
+    {
+      label: 'Text Encoder Fidelity',
+      value: textFidelity,
+      detail: 'Cosine similarity (FP32 vs INT8 embeddings)',
+      icon: Activity,
+    },
+    {
+      label: 'Vision Encoder Fidelity',
+      value: visionFidelity,
+      detail: 'Cosine similarity (FP32 vs INT8 embeddings)',
+      icon: ImageIcon,
+    },
+    {
+      label: 'Retrieval Quality',
+      value: 'R@10 91.1%',
+      detail: 'Strict 91.1% | Semantic 100.0% (495-image baseline)',
+      icon: ShieldCheck,
+    },
+  ] as const;
 
   // Handle text search submission
   const handleSearch = useCallback((query: string) => {
@@ -79,6 +152,59 @@ export default function HomePage() {
           Search through medical images using natural language or by uploading an X-ray. 
           All AI inference runs locally in your browser — your data never leaves your device.
         </p>
+      </section>
+
+      {/* Novelty + Performance Snapshot */}
+      <section className="mb-10">
+        <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-sky-50 via-white to-emerald-50 p-6 shadow-sm">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-sky-200/30 blur-2xl" />
+          <div className="pointer-events-none absolute -bottom-20 -left-16 h-40 w-40 rounded-full bg-emerald-200/30 blur-2xl" />
+
+          <div className="relative">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border bg-white/70 px-3 py-1 text-xs font-medium text-foreground backdrop-blur">
+              <FlaskConical className="h-3.5 w-3.5 text-primary" />
+              Engineered Novelty
+            </div>
+            <h2 className="mb-2 text-2xl font-semibold tracking-tight">
+              Quantized BiomedCLIP Running Directly in the Browser
+            </h2>
+            <p className="mb-6 max-w-3xl text-sm text-muted-foreground">
+              Med-MIR deploys a state-of-the-art biomedical model as quantized ONNX encoders (text + vision) for local inference.
+              No GPU backend, no cloud inference API, and no patient-image upload to external inference servers.
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {noveltyStats.map(({ label, value, detail, icon: Icon }) => (
+                <div key={label} className="rounded-xl border bg-white/80 p-4 backdrop-blur">
+                  <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <Icon className="h-4 w-4 text-primary" />
+                    {label}
+                  </div>
+                  <div className="mb-1 text-lg font-semibold">{value}</div>
+                  <div className="text-xs text-muted-foreground">{detail}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <span>Latest benchmark: 2026-02-10 run</span>
+              <Link href="/metrics" className="font-medium text-primary hover:underline">
+                View Metrics Dashboard
+              </Link>
+              <Link href="/benchmark" className="font-medium text-primary hover:underline">
+                Run Browser Benchmark
+              </Link>
+              <a
+                href={`${dataBaseUrl}/quantization_benchmark.json`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary hover:underline"
+              >
+                View Source JSON
+              </a>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Loading State */}
