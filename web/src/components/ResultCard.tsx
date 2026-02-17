@@ -54,13 +54,24 @@ export function ResultCard({ result, onFindSimilar, rank }: ResultCardProps) {
         </div>
       )}
 
-      {/* Similarity Score Badge */}
-      <div
-        className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-full bg-black/80 px-2.5 py-1 shadow-md backdrop-blur-sm"
-        title={`Cosine similarity: ${score.toFixed(4)} — how closely this image matches your query (1.0 = perfect match)`}
-      >
-        <span className="text-[10px] font-medium text-white/70">Match</span>
-        <span className="text-xs font-bold text-white">{Math.round(score * 100)}%</span>
+      {/* Similarity Score Badge + Layman Tooltip */}
+      <div className="absolute right-2 top-2 z-20">
+        <div
+          tabIndex={0}
+          aria-label={`Match score ${Math.round(score * 100)} percent. Hover or focus for explanation.`}
+          className="peer flex cursor-help items-center gap-1 rounded-full bg-black/80 px-2.5 py-1 shadow-md backdrop-blur-sm outline-none"
+        >
+          <span className="text-[10px] font-medium text-white/70">Match</span>
+          <span className="text-xs font-bold text-white">{Math.round(score * 100)}%</span>
+        </div>
+        <div
+          role="tooltip"
+          className="pointer-events-none absolute right-0 mt-2 w-64 translate-y-1 rounded-lg border bg-background/95 p-3 text-[11px] leading-relaxed text-foreground shadow-xl opacity-0 backdrop-blur-sm transition-all duration-150 peer-hover:translate-y-0 peer-hover:opacity-100 peer-focus-visible:translate-y-0 peer-focus-visible:opacity-100"
+        >
+          Match % tells how visually/textually similar this result is to your query compared against other images in this
+          dataset. Higher means more similar. Use it to rank results (for example, 26% is a stronger match than 24%), not
+          as a diagnosis probability.
+        </div>
       </div>
 
       {/* Image */}
